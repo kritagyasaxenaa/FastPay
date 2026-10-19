@@ -8,6 +8,10 @@ A Qt-based C++ prototype exploring online and offline payment flows with ultraso
 
 The current Android app uses Qt Widgets. It is a C++ app that can be packaged for Android, but it does not use Android's native UI toolkit. A native Android UI would require a Kotlin/Java layer and a deliberate JNI boundary to the C++ logic.
 
+## Simulated bank demo
+
+For local demonstrations, run the API with `FASTPAY_DEMO_MODE=true`. It seeds test accounts with INR 1,000.00 and simulates transfers by debiting and crediting the in-app ledger. The transfer API supports retries without duplicate debits and exposes demo balances at `/api/v1/demo/bank-accounts/{account_id}`. It is play money only; it does not connect to banks, UPI, or other payment rails. Keep demo mode off on public deployments.
+
 ## Build the Android APK
 
 ### Step 1: Configure Server URL

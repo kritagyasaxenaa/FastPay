@@ -5,13 +5,14 @@ Supports multiple Android devices connecting simultaneously
 
 import uuid
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, DateTime, Boolean, text
+from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Integer, UniqueConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -55,11 +56,42 @@ class DeviceToken(Base):
     platform = Column(String, default="android")
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+class DemoBankAccount(Base):
+    """Play-money account used only by the local/demo API."""
+    __tablename__ = "demo_bank_accounts"
+    account_id = Column(String, primary_key=True, index=True)
+    currency = Column(String, nullable=False, default="INR")
+    balance_paise = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DemoBankTransfer(Base):
+    """Immutable record of a simulated transfer between demo accounts."""
+    __tablename__ = "demo_bank_transfers"
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_demo_bank_transfer_idem"),)
+    reference = Column(String, primary_key=True)
+    idempotency_key = Column(String, nullable=False)
+    sender_id = Column(String, nullable=False, index=True)
+    receiver_id = Column(String, nullable=False, index=True)
+    amount_paise = Column(Integer, nullable=False)
+    currency = Column(String, nullable=False, default="INR")
+    status = Column(String, nullable=False, default="completed")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+@asynccontextmanager
+async def lifespan(_app):
+    if os.getenv("FASTPAY_DEMO_MODE", "").lower() == "true":
+        db = SessionLocal()
+        try:
+            ensure_demo_bank_accounts(db)
+        finally:
+            db.close()
+    yield
+
 # FastAPI app
-app = FastAPI(title="FastPay API (demo only)", version="2.1.0")
+app = FastAPI(title="FastPay API (demo only)", version="2.1.0", lifespan=lifespan)
 
 # This API is a prototype, not a payment processor. Its current transaction
 # endpoints do not authenticate users, check balances, or verify offline
@@ -155,6 +187,36 @@ def notify_receiver(receiver_id: str, amount: str, sender_id: str, db: Session):
     else:
         print(f"[NOTIFY] {receiver_id}: Received {amount} from {sender_id} (no device token)")
 
+def ensure_demo_bank_accounts(db: Session):
+    """Create deterministic play-money accounts when the demo API is used."""
+    demo_accounts = (
+        "sender@fastpay",
+        "receiver@fastpay",
+        "alice@fastpay",
+        "bob@fastpay",
+        "charlie@fastpay",
+    )
+    for account_id in demo_accounts:
+        account = db.query(DemoBankAccount).filter(DemoBankAccount.account_id == account_id).first()
+        if account is None:
+            db.add(DemoBankAccount(account_id=account_id, currency="INR", balance_paise=100_000))
+    db.commit()
+
+def amount_to_paise(amount: str) -> int:
+    """Parse a positive INR amount with at most two decimal places."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        value = Decimal(amount)
+    except (InvalidOperation, TypeError):
+        raise HTTPException(status_code=422, detail="amount_must_be_a_valid_decimal")
+    if not value.is_finite() or value <= 0 or value.as_tuple().exponent < -2:
+        raise HTTPException(status_code=422, detail="amount_must_be_positive_inr_with_at_most_two_decimals")
+    return int(value * 100)
+
+def format_inr(paise: int) -> str:
+    return f"{paise // 100}.{paise % 100:02d}"
+
 # Routes
 @app.get("/")
 def root():
@@ -181,25 +243,100 @@ def register_user(user: UserRegistration, db: Session = Depends(get_db)):
 
 @app.post("/api/v1/transactions/online")
 def submit_online_transaction(body: OnlineTransactionSubmit, db: Session = Depends(get_db)):
-    """Submit an online transaction"""
+    """Simulate an online payment between the seeded play-money accounts."""
+    if len(body.nonce) > 128 or not body.nonce.strip():
+        raise HTTPException(status_code=422, detail="nonce_required_and_must_be_at_most_128_characters")
+    amount_paise = amount_to_paise(body.amount)
+    if body.sender_id == body.receiver_id:
+        raise HTTPException(status_code=422, detail="sender_and_receiver_must_differ")
+
+    ensure_demo_bank_accounts(db)
     ensure_not_frozen(body.sender_id, db)
     ensure_not_frozen(body.receiver_id, db)
-    
+
+    idempotency_key = f"{body.sender_id}:{body.nonce}"
+    existing_transfer = db.query(DemoBankTransfer).filter(
+        DemoBankTransfer.idempotency_key == idempotency_key
+    ).first()
+    if existing_transfer:
+        same_request = (
+            existing_transfer.receiver_id == body.receiver_id
+            and existing_transfer.amount_paise == amount_paise
+        )
+        if not same_request:
+            raise HTTPException(status_code=409, detail="idempotency_key_reused_for_different_payment")
+        return {
+            "tx_id": existing_transfer.reference,
+            "status": existing_transfer.status,
+            "demo": True,
+            "bank_reference": existing_transfer.reference,
+            "currency": existing_transfer.currency,
+            "amount": format_inr(existing_transfer.amount_paise),
+            "idempotent_replay": True,
+        }
+
+    sender = db.query(DemoBankAccount).filter(
+        DemoBankAccount.account_id == body.sender_id
+    ).with_for_update().first()
+    receiver = db.query(DemoBankAccount).filter(
+        DemoBankAccount.account_id == body.receiver_id
+    ).with_for_update().first()
+    if sender is None or receiver is None:
+        raise HTTPException(status_code=404, detail="demo_bank_account_not_found")
+    if sender.currency != receiver.currency or sender.currency != "INR":
+        raise HTTPException(status_code=422, detail="unsupported_demo_currency")
+    if sender.balance_paise < amount_paise:
+        raise HTTPException(status_code=409, detail="insufficient_demo_funds")
+
     tx_id = str(uuid.uuid4())
+    sender.balance_paise -= amount_paise
+    receiver.balance_paise += amount_paise
+    transfer = DemoBankTransfer(
+        reference=tx_id,
+        idempotency_key=idempotency_key,
+        sender_id=body.sender_id,
+        receiver_id=body.receiver_id,
+        amount_paise=amount_paise,
+        currency="INR",
+        status="completed",
+    )
+    db.add(transfer)
     tx = Transaction(
         tx_id=tx_id,
         sender_id=body.sender_id,
         receiver_id=body.receiver_id,
-        amount=body.amount,
+        amount=format_inr(amount_paise),
         nonce=body.nonce,
         tx_type="online",
         status="completed"
     )
     db.add(tx)
     db.commit()
-    
-    notify_receiver(body.receiver_id, body.amount, body.sender_id, db)
-    return {"tx_id": tx_id, "status": "completed"}
+
+    notify_receiver(body.receiver_id, format_inr(amount_paise), body.sender_id, db)
+    return {
+        "tx_id": tx_id,
+        "status": "completed",
+        "demo": True,
+        "bank_reference": tx_id,
+        "currency": "INR",
+        "amount": format_inr(amount_paise),
+        "idempotent_replay": False,
+    }
+
+@app.get("/api/v1/demo/bank-accounts/{account_id}")
+def get_demo_bank_account(account_id: str, db: Session = Depends(get_db)):
+    """Return the play-money balance for a seeded demo account."""
+    ensure_demo_bank_accounts(db)
+    account = db.query(DemoBankAccount).filter(DemoBankAccount.account_id == account_id).first()
+    if account is None:
+        raise HTTPException(status_code=404, detail="demo_bank_account_not_found")
+    return {
+        "account_id": account.account_id,
+        "balance": format_inr(account.balance_paise),
+        "currency": account.currency,
+        "demo": True,
+    }
 
 @app.get("/api/v1/transactions/online")
 def list_online_transactions(user_id: str, since: Optional[str] = None, db: Session = Depends(get_db)):
