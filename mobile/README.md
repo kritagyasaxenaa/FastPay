@@ -18,7 +18,7 @@ The app starts with `EXPO_PUBLIC_API_URL` if set, otherwise the emulator bridge 
 
 ## Test on a phone
 
-Install `FastPay-Phone-Demo-test.apk` on an arm64 Android phone. The build already points at the hosted demo server, so no setup or local Wi-Fi server is required. Android may ask you to allow installation from your browser or file manager. Open FastPay Demo and use the pre-seeded `alice@fastpay` and `bob@fastpay` accounts.
+Download [FastPay-Phone-Demo-test.apk](FastPay-Phone-Demo-test.apk) and install it on an arm64 Android phone. The build already points at the hosted demo server, so no setup or local Wi-Fi server is required. Android may ask you to allow installation from your browser or file manager. Open FastPay Demo and use the pre-seeded `alice@fastpay` and `bob@fastpay` accounts.
 
 The public demo supports only health checks, those seeded fake balances, and simulated transfers up to INR 50. It is rate-limited and stores its test ledger ephemerally, so balances may reset when the service restarts. Do not enter real credentials or expect real payments.
 
