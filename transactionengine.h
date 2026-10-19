@@ -43,6 +43,7 @@ public:
     bool checkTransactionIdMatch(const QString &localTransactionId, const QString &serverTransactionId);
     void setServerBaseUrl(const QString &baseUrl);
     QString serverBaseUrl() const { return m_serverBaseUrl; }
+    void fetchDemoBankBalance(const QString &accountId);
     void submitOnlineTransactionToServer(const QString &senderId, const QString &receiverId,
                                          const QString &amount, const QString &pin);
     void verifyTransactionIdWithServer(const QString &userId, const QString &transactionId,
@@ -52,9 +53,6 @@ public:
     // --- Online: receiver emits ultrasound (header + public key); sender captures 2x, extracts key, pays with PIN ---
     QByteArray buildOnlineEmitPayload(const QByteArray &headerIdentifier, const QByteArray &publicKeyPem);
     QByteArray extractKeyFromMicBuffer(const QByteArray &micBuffer2x, const QByteArray &header);
-    bool submitOnlineTransaction(const QString &senderUpiId, const QString &amount,
-                                 const QByteArray &receiverPublicKeyPem, const QString &pin);
-
     // --- Offline: cold wallet to cold wallet; sender signs, receiver verifies and sends receipt; sync when online ---
     QByteArray signOfflineTransaction(const QString &senderId, const QString &receiverId,
                                       const QString &amount, const QString &nonce,
@@ -77,12 +75,15 @@ signals:
     void offlineVerificationFailed();
     void accountFrozen();
     void historyUpdated();
+    void demoBankBalanceReceived(const QString &accountId, const QString &balance, const QString &currency);
+    void demoBankBalanceFailed(const QString &accountId, const QString &error);
 
 private:
     bool m_accountFrozen = false;
     QList<TransactionRecord> m_localHistory;
     QString m_serverBaseUrl;
     QNetworkAccessManager *m_network = nullptr;
+    bool m_onlineRequestPending = false;
 };
 
 #endif // TRANSACTIONENGINE_H

@@ -6,7 +6,7 @@ import uuid
 _database_fd, _database_path = tempfile.mkstemp(prefix="fastpay-tests-", suffix=".db")
 os.close(_database_fd)
 os.environ["DATABASE_URL"] = "sqlite:///" + _database_path
-os.environ["FASTPAY_DEMO_MODE"] = "false"
+os.environ["FASTPAY_DEMO_MODE"] = "true"
 
 from fastapi.testclient import TestClient
 
@@ -14,6 +14,8 @@ from server.main_production import app, engine
 
 
 client = TestClient(app)
+client.__enter__()
+os.environ["FASTPAY_DEMO_MODE"] = "false"
 
 
 class ProductionSafetyGateTests(unittest.TestCase):
@@ -111,6 +113,7 @@ class ProductionSafetyGateTests(unittest.TestCase):
 
 
 def tearDownModule():
+    client.__exit__(None, None, None)
     engine.dispose()
     try:
         os.unlink(_database_path)

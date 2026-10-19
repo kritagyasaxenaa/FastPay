@@ -32,6 +32,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_engine, &TransactionEngine::accountFrozen, this, &MainWindow::onAccountFrozen);
     connect(m_engine, &TransactionEngine::onlineTransactionCompleted, this, &MainWindow::onOnlineTransactionCompleted);
     connect(m_engine, &TransactionEngine::onlineTransactionFailed, this, &MainWindow::onOnlineTransactionFailed);
+    connect(m_engine, &TransactionEngine::demoBankBalanceReceived, this, &MainWindow::onDemoBankBalanceReceived);
+    connect(m_engine, &TransactionEngine::demoBankBalanceFailed, this, &MainWindow::onDemoBankBalanceFailed);
     connect(m_ultrasound, &UltrasoundHelper::keyReceived, this, &MainWindow::onKeyReceivedFromMic);
 
     setupUi();
@@ -131,9 +133,23 @@ void MainWindow::setupUi()
     pubKeyLabel->setStyleSheet("color: #8b949e; font-size: 11px;");
     identityForm->addRow(tr("Public key (hash):"), pubKeyLabel);
     QLineEdit *leServerUrl = new QLineEdit(this);
-    leServerUrl->setPlaceholderText(tr("e.g. http://localhost:8000 (optional)"));
+    leServerUrl->setPlaceholderText(tr("Local demo API URL"));
     leServerUrl->setObjectName("serverBaseUrl");
-    identityForm->addRow(tr("Server URL:"), leServerUrl);
+    leServerUrl->setText(m_engine->serverBaseUrl());
+    identityForm->addRow(tr("Demo API URL:"), leServerUrl);
+
+    QLabel *senderBalance = new QLabel(tr("Sender: not loaded"), this);
+    senderBalance->setObjectName("demoSenderBalance");
+    QLabel *receiverBalance = new QLabel(tr("Receiver: not loaded"), this);
+    receiverBalance->setObjectName("demoReceiverBalance");
+    QPushButton *refreshBalances = new QPushButton(tr("Refresh"), this);
+    refreshBalances->setObjectName("refreshDemoBalances");
+    QHBoxLayout *balanceRow = new QHBoxLayout();
+    balanceRow->addWidget(senderBalance);
+    balanceRow->addWidget(receiverBalance);
+    balanceRow->addWidget(refreshBalances);
+    identityForm->addRow(tr("Play-money balances:"), balanceRow);
+    connect(refreshBalances, &QPushButton::clicked, this, &MainWindow::refreshDemoBalances);
     mainLayout->addWidget(identityBox);
 
     QHBoxLayout *modeRow = new QHBoxLayout();
@@ -316,19 +332,15 @@ void MainWindow::onOnlineSendSubmit()
     if (pin.isEmpty()) return;
     QLineEdit *serverUrlEdit = findChild<QLineEdit*>("serverBaseUrl");
     QString serverUrl = serverUrlEdit ? serverUrlEdit->text().trimmed() : QString();
-    if (!serverUrl.isEmpty()) {
-        m_engine->setServerBaseUrl(serverUrl);
-        m_engine->submitOnlineTransactionToServer("sender@fastpay", "receiver@fastpay", amount, pin);
-        // Success/failure and amount clear handled by onOnlineTransactionCompleted / onOnlineTransactionFailed
-    } else {
-        QByteArray receiverKey("DEMO_KEY");
-        bool ok = m_engine->submitOnlineTransaction("sender@fastpay", amount, receiverKey, pin);
-        if (ok) {
-            QMessageBox::information(this, tr("Online"), tr("Transaction initiated. Receiver gets notification. Nonce: %1").arg(currentNonce()));
-            if (amountEdit) amountEdit->clear();
-        } else
-            QMessageBox::warning(this, tr("Error"), tr("Transaction failed. Check your UPI PIN."));
+    if (serverUrl.isEmpty()) {
+        QMessageBox::warning(this, tr("Demo server required"),
+                             tr("Enter the URL of the local demo API. This app does not process real payments."));
+        return;
     }
+    m_engine->setServerBaseUrl(serverUrl);
+    m_engine->submitOnlineTransactionToServer("sender@fastpay", "receiver@fastpay", amount, pin);
+    // The simulated server response determines success; the app no longer
+    // reports a local-only transaction as if it changed the server ledger.
 }
 
 void MainWindow::onOnlineTransactionCompleted(const QString &txId)
@@ -338,11 +350,46 @@ void MainWindow::onOnlineTransactionCompleted(const QString &txId)
                                  .arg(txId));
     QLineEdit *amountEdit = findChild<QLineEdit*>("onlineAmount");
     if (amountEdit) amountEdit->clear();
+    refreshDemoBalances();
 }
 
 void MainWindow::onOnlineTransactionFailed(const QString &error)
 {
     QMessageBox::warning(this, tr("Error"), error);
+}
+
+void MainWindow::refreshDemoBalances()
+{
+    QLineEdit *serverUrlEdit = findChild<QLineEdit*>("serverBaseUrl");
+    const QString serverUrl = serverUrlEdit ? serverUrlEdit->text().trimmed() : QString();
+    if (serverUrl.isEmpty()) {
+        QMessageBox::information(this, tr("Demo server required"),
+                                 tr("Enter the URL of the local demo API to load play-money balances."));
+        return;
+    }
+    m_engine->setServerBaseUrl(serverUrl);
+    m_engine->fetchDemoBankBalance(QStringLiteral("sender@fastpay"));
+    m_engine->fetchDemoBankBalance(QStringLiteral("receiver@fastpay"));
+}
+
+void MainWindow::onDemoBankBalanceReceived(const QString &accountId, const QString &balance, const QString &currency)
+{
+    const QString objectName = accountId == QStringLiteral("sender@fastpay")
+        ? QStringLiteral("demoSenderBalance")
+        : QStringLiteral("demoReceiverBalance");
+    if (QLabel *label = findChild<QLabel*>(objectName))
+        label->setText(QStringLiteral("%1: %2 %3").arg(accountId, currency, balance));
+}
+
+void MainWindow::onDemoBankBalanceFailed(const QString &accountId, const QString &error)
+{
+    const QString objectName = accountId == QStringLiteral("sender@fastpay")
+        ? QStringLiteral("demoSenderBalance")
+        : QStringLiteral("demoReceiverBalance");
+    if (QLabel *label = findChild<QLabel*>(objectName)) {
+        label->setText(tr("%1: unavailable").arg(accountId));
+        label->setToolTip(error);
+    }
 }
 
 void MainWindow::onOfflineSendSign()

@@ -26,6 +26,8 @@ private slots:
     void onAccountFrozen();
     void onOnlineTransactionCompleted(const QString &txId);
     void onOnlineTransactionFailed(const QString &error);
+    void onDemoBankBalanceReceived(const QString &accountId, const QString &balance, const QString &currency);
+    void onDemoBankBalanceFailed(const QString &accountId, const QString &error);
     void showHistory();
     void onPhoneNumberChanged();
 
@@ -35,6 +37,7 @@ private:
     void showOnlinePanel();
     void showOfflinePanel();
     void ensurePinSet();
+    void refreshDemoBalances();
     QString currentNonce() const;
 
     QStackedWidget *m_stack = nullptr;

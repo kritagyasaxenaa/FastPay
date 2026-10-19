@@ -1,7 +1,4 @@
-"""
-FastPay Production Server with PostgreSQL Database
-Supports multiple Android devices connecting simultaneously
-"""
+"""FastPay demo API with an isolated simulated-bank ledger."""
 
 import uuid
 import os
@@ -250,10 +247,6 @@ def submit_online_transaction(body: OnlineTransactionSubmit, db: Session = Depen
     if body.sender_id == body.receiver_id:
         raise HTTPException(status_code=422, detail="sender_and_receiver_must_differ")
 
-    ensure_demo_bank_accounts(db)
-    ensure_not_frozen(body.sender_id, db)
-    ensure_not_frozen(body.receiver_id, db)
-
     idempotency_key = f"{body.sender_id}:{body.nonce}"
     existing_transfer = db.query(DemoBankTransfer).filter(
         DemoBankTransfer.idempotency_key == idempotency_key
@@ -313,7 +306,6 @@ def submit_online_transaction(body: OnlineTransactionSubmit, db: Session = Depen
     db.add(tx)
     db.commit()
 
-    notify_receiver(body.receiver_id, format_inr(amount_paise), body.sender_id, db)
     return {
         "tx_id": tx_id,
         "status": "completed",
@@ -327,7 +319,6 @@ def submit_online_transaction(body: OnlineTransactionSubmit, db: Session = Depen
 @app.get("/api/v1/demo/bank-accounts/{account_id}")
 def get_demo_bank_account(account_id: str, db: Session = Depends(get_db)):
     """Return the play-money balance for a seeded demo account."""
-    ensure_demo_bank_accounts(db)
     account = db.query(DemoBankAccount).filter(DemoBankAccount.account_id == account_id).first()
     if account is None:
         raise HTTPException(status_code=404, detail="demo_bank_account_not_found")

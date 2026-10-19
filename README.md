@@ -4,7 +4,7 @@ A Qt-based C++ prototype exploring online and offline payment flows with ultraso
 
 ## Production status
 
-**Not production-ready.** The Android app contains demo transaction flows and placeholder cryptography. The server does not authenticate users, enforce balances, or verify offline signatures. The production-named API now disables all `/api/v1/` operations by default; only `/` and `/api/v1/health` remain available. Setting `FASTPAY_DEMO_MODE=true` re-enables the prototype API for isolated demonstrations only. Never set that flag on a public deployment.
+**Not production-ready.** The Android app contains demo transaction flows and placeholder cryptography. The server's simulated balances are play money, users are not authenticated, and offline signatures are not verified. The production-named API disables all `/api/v1/` operations by default except `/api/v1/health`. Setting `FASTPAY_DEMO_MODE=true` enables the simulator for isolated demonstrations only. Never set that flag on a public deployment.
 
 The current Android app uses Qt Widgets. It is a C++ app that can be packaged for Android, but it does not use Android's native UI toolkit. A native Android UI would require a Kotlin/Java layer and a deliberate JNI boundary to the C++ logic.
 
@@ -14,23 +14,13 @@ For local demonstrations, run the API with `FASTPAY_DEMO_MODE=true`. It seeds te
 
 ## Build the Android APK
 
-### Step 1: Configure Server URL
+### Step 1: Start the local demo API
 
-Edit `server_config.h` and change the PRODUCTION_SERVER URL:
-
-```cpp
-const QString PRODUCTION_SERVER = "https://your-actual-server-url.com";
-```
+Follow the local demo steps in [`server/README.md`](server/README.md). The release app does not contain a production service URL.
 
 ### Step 2: Build APK
 
-Run the automated build script:
-```bash
-chmod +x build_android.sh
-./build_android.sh
-```
-
-Or use Qt Creator:
+Use Qt Creator:
 1. Open `FastPayQt.pro` or `CMakeLists.txt`
 2. Select Android kit
 3. Build → Build Project
@@ -56,13 +46,7 @@ Install via Qt Online Installer: https://www.qt.io/download-qt-installer
 
 ## ⚙️ Configuration
 
-**IMPORTANT:** Edit `server_config.h` before building:
-
-```cpp
-const QString PRODUCTION_SERVER = "https://your-server-url.com";
-```
-
-Deploy the Python server (in `server/` directory) to Render, Railway, or your own hosting.
+The Android debug build defaults to the Android Emulator host address. Release builds have no server URL; enter a local demo server URL in the app when testing. Do not deploy the demo API publicly.
 
 ---
 
@@ -102,9 +86,8 @@ App requests RECORD_AUDIO at runtime automatically
 
 ## 📦 Files to Edit Before Building
 
-1. ✅ `server_config.h` - Set your production server URL
-2. ✅ `android/AndroidManifest.xml` - Change package name if needed
-3.  `build_android.sh` - Update Qt/SDK paths if non-standard
+1. `server_config.h` - Leave the release server URL empty; enter a local demo API URL in the app when testing.
+2. `android/AndroidManifest.xml` - Change package name if needed.
 
 ---
 

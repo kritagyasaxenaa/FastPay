@@ -128,31 +128,6 @@ QByteArray TransactionEngine::extractKeyFromMicBuffer(const QByteArray &micBuffe
     return key.trimmed();
 }
 
-bool TransactionEngine::submitOnlineTransaction(const QString &senderUpiId, const QString &amount,
-                                                const QByteArray &receiverPublicKeyPem, const QString &pin)
-{
-    Q_UNUSED(receiverPublicKeyPem);
-    if (!verifyPin(pin)) {
-        emit onlineTransactionFailed(tr("Wrong UPI PIN. Transaction not approved."));
-        return false;
-    }
-    QString nonce = getTimestampNonce();
-    QString txId = generateTransactionId();
-
-    TransactionRecord rec;
-    rec.id = txId;
-    rec.type = "online";
-    rec.role = "sender";
-    rec.peerId = "receiver@fastpay";
-    rec.amount = amount;
-    rec.nonce = nonce;
-    rec.status = "completed";
-    rec.createdAt = QDateTime::currentDateTime();
-    addToLocalHistory(rec);
-    emit onlineTransactionCompleted(txId);
-    return true;
-}
-
 QByteArray TransactionEngine::signOfflineTransaction(const QString &senderId, const QString &receiverId,
                                                      const QString &amount, const QString &nonce,
                                                      const QByteArray &senderPrivateKeyPem)
@@ -207,6 +182,48 @@ void TransactionEngine::setServerBaseUrl(const QString &baseUrl)
         m_serverBaseUrl.chop(1);
 }
 
+void TransactionEngine::fetchDemoBankBalance(const QString &accountId)
+{
+    const QUrl baseUrl(m_serverBaseUrl);
+    if (!baseUrl.isValid() || baseUrl.host().isEmpty()
+        || (baseUrl.scheme() != QStringLiteral("http") && baseUrl.scheme() != QStringLiteral("https"))) {
+        emit demoBankBalanceFailed(accountId, tr("Enter a valid local demo server URL."));
+        return;
+    }
+
+    QUrl url = baseUrl;
+    url.setPath(baseUrl.path() + QStringLiteral("/api/v1/demo/bank-accounts/") + accountId);
+    QNetworkRequest request(url);
+    request.setRawHeader("Accept", "application/json");
+    request.setTransferTimeout(5000);
+    QNetworkReply *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, accountId]() {
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray payload = reply->readAll();
+        const QString networkError = reply->errorString();
+        reply->deleteLater();
+
+        const QJsonDocument document = QJsonDocument::fromJson(payload);
+        if (status < 200 || status >= 300 || !document.isObject()) {
+            QString detail = networkError;
+            if (document.isObject())
+                detail = document.object().value(QStringLiteral("detail")).toString(detail);
+            emit demoBankBalanceFailed(accountId, detail);
+            return;
+        }
+
+        const QJsonObject result = document.object();
+        if (!result.value(QStringLiteral("demo")).toBool()) {
+            emit demoBankBalanceFailed(accountId, tr("The server did not identify this as a demo balance."));
+            return;
+        }
+        emit demoBankBalanceReceived(
+            accountId,
+            result.value(QStringLiteral("balance")).toString(),
+            result.value(QStringLiteral("currency")).toString());
+    });
+}
+
 void TransactionEngine::submitOnlineTransactionToServer(const QString &senderId, const QString &receiverId,
                                                        const QString &amount, const QString &pin)
 {
@@ -214,11 +231,15 @@ void TransactionEngine::submitOnlineTransactionToServer(const QString &senderId,
         emit onlineTransactionFailed(tr("Wrong UPI PIN. Transaction not approved."));
         return;
     }
-    if (m_serverBaseUrl.isEmpty()) {
-        emit onlineTransactionFailed(tr("Server URL not set. Set server base URL or use offline submit."));
+    if (m_onlineRequestPending) {
+        emit onlineTransactionFailed(tr("A simulated payment is already being processed."));
         return;
     }
-    QString nonce = getTimestampNonce();
+    if (m_serverBaseUrl.isEmpty()) {
+        emit onlineTransactionFailed(tr("Server URL not set. Enter a local demo API URL."));
+        return;
+    }
+    const QString nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
     QJsonObject body;
     body.insert(QStringLiteral("sender_id"), senderId);
     body.insert(QStringLiteral("receiver_id"), receiverId);
@@ -230,17 +251,28 @@ void TransactionEngine::submitOnlineTransactionToServer(const QString &senderId,
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     req.setHeader(QNetworkRequest::ContentLengthHeader, json.size());
+    req.setTransferTimeout(5000);
+    m_onlineRequestPending = true;
     QNetworkReply *reply = m_network->post(req, json);
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, senderId, receiverId, amount, nonce]() {
+        m_onlineRequestPending = false;
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 403) {
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const QByteArray errorPayload = reply->readAll();
+            const QJsonDocument errorDocument = QJsonDocument::fromJson(errorPayload);
+            QString serverError;
+            if (errorDocument.isObject())
+                serverError = errorDocument.object().value(QStringLiteral("detail")).toString();
+            if (status == 403) {
                 m_accountFrozen = true;
                 emit accountFrozen();
                 emit onlineTransactionFailed(tr("Account frozen. Contact support."));
             } else {
-                emit onlineTransactionFailed(tr("Network error: %1").arg(reply->errorString()));
+                emit onlineTransactionFailed(serverError.isEmpty()
+                    ? tr("Network error: %1").arg(reply->errorString())
+                    : serverError);
             }
             return;
         }
@@ -251,6 +283,10 @@ void TransactionEngine::submitOnlineTransactionToServer(const QString &senderId,
             return;
         }
         QJsonObject obj = doc.object();
+        if (!obj.value(QStringLiteral("demo")).toBool()) {
+            emit onlineTransactionFailed(tr("Server did not identify this as a simulated payment."));
+            return;
+        }
         QString txId = obj.value(QStringLiteral("tx_id")).toString();
         if (txId.isEmpty()) {
             emit onlineTransactionFailed(tr("Server did not return transaction ID."));
