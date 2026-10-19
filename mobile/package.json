@@ -1,0 +1,24 @@
+{
+  "name": "fastpay-android",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "prebuild:android": "expo prebuild --platform android",
+    "typecheck": "tsc --noEmit",
+    "export:android": "expo export --platform android"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "^57.0.0",
+    "expo": "~57.0.0",
+    "expo-system-ui": "~57.0.4",
+    "react": "19.2.3",
+    "react-native": "~0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "~5.9.0"
+  }
+}

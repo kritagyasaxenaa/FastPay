@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FastPay Demo",
+    "slug": "fastpay-demo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "fastpay",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.fastpay.demo",
+      "versionCode": 1,
+      "networkSecurityConfig": "@xml/network_security_config",
+      "usesCleartextTraffic": false
+    },
+    "plugins": ["./plugins/withDemoNetworkSecurity"]
+  }
+}

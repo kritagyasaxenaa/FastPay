@@ -3,3 +3,10 @@ __pycache__/
 .venv/
 build-*/
 server/*.db
+node_modules/
+.expo/
+mobile/android/
+mobile/ios/
+mobile/dist/
+mobile/.gradle/
+mobile/*.lockb
