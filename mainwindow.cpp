@@ -333,7 +333,9 @@ void MainWindow::onOnlineSendSubmit()
 
 void MainWindow::onOnlineTransactionCompleted(const QString &txId)
 {
-    QMessageBox::information(this, tr("Online"), tr("Transaction completed. Transaction ID: %1").arg(txId));
+    QMessageBox::information(this, tr("Demo payment"),
+                             tr("Simulated transfer completed with play money. No bank or payment network was contacted. Reference: %1")
+                                 .arg(txId));
     QLineEdit *amountEdit = findChild<QLineEdit*>("onlineAmount");
     if (amountEdit) amountEdit->clear();
 }

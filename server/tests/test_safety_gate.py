@@ -72,6 +72,10 @@ class ProductionSafetyGateTests(unittest.TestCase):
             self.assertEqual(replay.status_code, 200, replay.text)
             self.assertTrue(replay.json()["idempotent_replay"])
             self.assertEqual(replay.json()["tx_id"], transfer.json()["tx_id"])
+            conflicting_replay = dict(payment, amount="12.35")
+            conflict = client.post("/api/v1/transactions/online", json=conflicting_replay)
+            self.assertEqual(conflict.status_code, 409)
+            self.assertEqual(conflict.json()["detail"], "idempotency_key_reused_for_different_payment")
         finally:
             os.environ["FASTPAY_DEMO_MODE"] = "false"
 
