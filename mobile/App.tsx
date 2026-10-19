@@ -242,9 +242,9 @@ export default function App() {
 
           {showServer && (
             <View style={styles.serverCard}>
-              <Text style={styles.fieldLabel}>LOCAL DEMO SERVER</Text>
+              <Text style={styles.fieldLabel}>DEMO SERVER</Text>
               <TextInput autoCapitalize="none" autoCorrect={false} onChangeText={setDraftUrl} style={styles.serverInput} value={draftUrl} />
-              <Text style={styles.serverHint}>Android Emulator uses 10.0.2.2 to reach your computer.</Text>
+              <Text style={styles.serverHint}>Use the hosted HTTPS demo URL, or 10.0.2.2:8000 in the Android Emulator.</Text>
               <Pressable onPress={saveServerUrl} style={styles.saveButton}><Text style={styles.saveButtonText}>Save and connect</Text></Pressable>
             </View>
           )}

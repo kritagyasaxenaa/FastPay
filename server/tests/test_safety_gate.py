@@ -10,7 +10,7 @@ os.environ["FASTPAY_DEMO_MODE"] = "true"
 
 from fastapi.testclient import TestClient
 
-from server.main_production import app, engine
+from server.main_production import app, engine, _public_demo_requests
 
 
 client = TestClient(app)
@@ -100,6 +100,40 @@ class ProductionSafetyGateTests(unittest.TestCase):
             self.assertEqual(response.status_code, 422)
         finally:
             os.environ["FASTPAY_DEMO_MODE"] = "false"
+
+    def test_public_demo_only_exposes_fake_accounts_and_limited_transfers(self):
+        os.environ["FASTPAY_DEMO_MODE"] = "true"
+        os.environ["FASTPAY_PUBLIC_DEMO_MODE"] = "true"
+        _public_demo_requests.clear()
+        try:
+            self.assertEqual(client.get("/api/v1/demo/bank-accounts/alice@fastpay").status_code, 200)
+            self.assertEqual(client.get("/api/v1/demo/bank-accounts/not-a-demo-account").status_code, 404)
+            self.assertEqual(client.post("/api/v1/users/register", json={
+                "user_id": "public-test", "phone_number": "000", "pin_hash": "not-a-secret"
+            }).status_code, 404)
+            self.assertEqual(client.get("/docs").status_code, 404)
+
+            payment = {
+                "sender_id": "alice@fastpay",
+                "receiver_id": "bob@fastpay",
+                "amount": "50.01",
+                "nonce": str(uuid.uuid4()),
+            }
+            too_large = client.post("/api/v1/transactions/online", json=payment)
+            self.assertEqual(too_large.status_code, 422)
+            self.assertEqual(too_large.json()["detail"], "public_demo_transfer_limit_is_50_inr")
+
+            _public_demo_requests.clear()
+            for index in range(10):
+                limited_payment = dict(payment, amount="0.01", nonce=f"public-limit-{uuid.uuid4()}-{index}")
+                self.assertEqual(client.post("/api/v1/transactions/online", json=limited_payment).status_code, 200)
+            final_payment = dict(payment, amount="0.01", nonce=f"public-limit-final-{uuid.uuid4()}")
+            limited = client.post("/api/v1/transactions/online", json=final_payment)
+            self.assertEqual(limited.status_code, 429)
+            self.assertEqual(limited.headers["retry-after"], "60")
+        finally:
+            os.environ["FASTPAY_DEMO_MODE"] = "false"
+            os.environ["FASTPAY_PUBLIC_DEMO_MODE"] = "false"
 
     @staticmethod
     def _subtract(value, amount):

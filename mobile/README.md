@@ -14,7 +14,7 @@ This React Native app is an Android client for FastPay's local simulated ledger.
 2. From this folder, install dependencies once with `npm install`.
 3. Start Metro and open the emulator with `npm run android`.
 
-The app starts with the emulator bridge URL `http://10.0.2.2:8000`. The Android network security policy allows HTTP only to that address; other hosts must use HTTPS. The server URL can be changed from the top-right settings button.
+The app starts with `EXPO_PUBLIC_API_URL` if set, otherwise the emulator bridge URL `http://10.0.2.2:8000`. The Android network security policy allows HTTP only to that address; other hosts must use HTTPS. The server URL can be changed from the top-right settings button. For public phone testing, use the hosted HTTPS demo URL provided after deployment.
 
 ## Build a debug APK
 

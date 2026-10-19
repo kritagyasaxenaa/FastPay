@@ -2,12 +2,15 @@
 
 import uuid
 import os
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from urllib.parse import unquote
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Integer, UniqueConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -90,16 +93,49 @@ async def lifespan(_app):
 # FastAPI app
 app = FastAPI(title="FastPay API (demo only)", version="2.1.0", lifespan=lifespan)
 
+_PUBLIC_DEMO_ACCOUNTS = {
+    "sender@fastpay",
+    "receiver@fastpay",
+    "alice@fastpay",
+    "bob@fastpay",
+    "charlie@fastpay",
+}
+_public_demo_requests = defaultdict(deque)
+_PUBLIC_DEMO_LIMITS = {
+    "transfer": (10, 60),  # requests per client IP per minute
+    "balance": (60, 60),
+}
+
+
+def _public_demo_rate_limited(request, route_kind: str) -> bool:
+    limit, window_seconds = _PUBLIC_DEMO_LIMITS[route_kind]
+    # Uvicorn is configured to trust Railway's forwarding proxy. The public
+    # demo uses no personal information, and these limits only protect the
+    # shared play-money ledger from casual abuse.
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    timestamps = _public_demo_requests[(route_kind, client_ip)]
+    while timestamps and timestamps[0] <= now - window_seconds:
+        timestamps.popleft()
+    if len(timestamps) >= limit:
+        return True
+    timestamps.append(now)
+    return False
+
 # This API is a prototype, not a payment processor. Its current transaction
 # endpoints do not authenticate users, check balances, or verify offline
 # signatures. Refuse all API traffic except health checks unless the operator
 # explicitly enables demo mode. Never enable this flag on a public deployment.
 @app.middleware("http")
 async def require_explicit_demo_mode(request, call_next):
+    demo_enabled = os.getenv("FASTPAY_DEMO_MODE", "").lower() == "true"
+    public_demo = os.getenv("FASTPAY_PUBLIC_DEMO_MODE", "").lower() == "true"
+    if public_demo and request.url.path in {"/docs", "/redoc", "/openapi.json"}:
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
     if (
         request.url.path.startswith("/api/v1/")
         and request.url.path != "/api/v1/health"
-        and os.getenv("FASTPAY_DEMO_MODE", "").lower() != "true"
+        and not demo_enabled
     ):
         return JSONResponse(
             status_code=503,
@@ -108,12 +144,28 @@ async def require_explicit_demo_mode(request, call_next):
                 "code": "payment_api_disabled",
             },
         )
+    if public_demo and request.url.path.startswith("/api/v1/") and request.url.path != "/api/v1/health":
+        is_transfer = request.method == "POST" and request.url.path == "/api/v1/transactions/online"
+        account_prefix = "/api/v1/demo/bank-accounts/"
+        is_balance = request.method == "GET" and request.url.path.startswith(account_prefix)
+        if is_balance:
+            account_id = unquote(request.url.path[len(account_prefix):])
+            is_balance = account_id in _PUBLIC_DEMO_ACCOUNTS
+        if not (is_transfer or is_balance):
+            return JSONResponse(status_code=404, content={"detail": "Route unavailable on the public demo"})
+        route_kind = "transfer" if is_transfer else "balance"
+        if _public_demo_rate_limited(request, route_kind):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Demo rate limit reached; try again shortly."},
+                headers={"Retry-After": "60"},
+            )
     return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -244,6 +296,8 @@ def submit_online_transaction(body: OnlineTransactionSubmit, db: Session = Depen
     if len(body.nonce) > 128 or not body.nonce.strip():
         raise HTTPException(status_code=422, detail="nonce_required_and_must_be_at_most_128_characters")
     amount_paise = amount_to_paise(body.amount)
+    if os.getenv("FASTPAY_PUBLIC_DEMO_MODE", "").lower() == "true" and amount_paise > 5_000:
+        raise HTTPException(status_code=422, detail="public_demo_transfer_limit_is_50_inr")
     if body.sender_id == body.receiver_id:
         raise HTTPException(status_code=422, detail="sender_and_receiver_must_differ")
 

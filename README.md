@@ -14,4 +14,4 @@ For local demonstrations, run the API with `FASTPAY_DEMO_MODE=true`. It seeds te
 
 ## Run and build Android
 
-Follow the React Native / Expo instructions in [`mobile/README.md`](mobile/README.md). Start the local demo API using [`server/README.md`](server/README.md). The Android Emulator URL is `http://10.0.2.2:8000`; cleartext is allowed only for that emulator host. Configure HTTPS for any other server. This demo backend must never be exposed publicly.
+Follow the React Native / Expo instructions in [`mobile/README.md`](mobile/README.md). Start the local demo API using [`server/README.md`](server/README.md). The Android Emulator URL is `http://10.0.2.2:8000`; cleartext is allowed only for that emulator host. The restricted public phone-test deployment uses HTTPS and exposes only fake-account demo routes; it must never receive real customer data, credentials, or funds.
