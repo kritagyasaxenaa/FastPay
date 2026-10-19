@@ -1,6 +1,6 @@
 # FastPay Android (React Native)
 
-This React Native app is an Android client for FastPay's local simulated ledger. Payments move play money only. It is not a bank app and is not production-ready.
+This React Native app is an Android client for FastPay's simulated bank ledger. Payments move play money only; it is a hosted test demo, not a real bank or production payment service.
 
 ## Requirements
 
@@ -14,9 +14,15 @@ This React Native app is an Android client for FastPay's local simulated ledger.
 2. From this folder, install dependencies once with `npm install`.
 3. Start Metro and open the emulator with `npm run android`.
 
-The app starts with `EXPO_PUBLIC_API_URL` if set, otherwise the emulator bridge URL `http://10.0.2.2:8000`. The Android network security policy allows HTTP only to that address; other hosts must use HTTPS. The server URL can be changed from the top-right settings button. For public phone testing, use the hosted HTTPS demo URL provided after deployment.
+The app starts with `EXPO_PUBLIC_API_URL` if set, otherwise the emulator bridge URL `http://10.0.2.2:8000`. The Android network security policy allows HTTP only to that address; other hosts must use HTTPS. The server URL can be changed from the top-right settings button.
 
-## Build a debug APK
+## Test on a phone
+
+Install `FastPay-Phone-Demo-test.apk` on an arm64 Android phone. The build already points at the hosted demo server, so no setup or local Wi-Fi server is required. Android may ask you to allow installation from your browser or file manager. Open FastPay Demo and use the pre-seeded `alice@fastpay` and `bob@fastpay` accounts.
+
+The public demo supports only health checks, those seeded fake balances, and simulated transfers up to INR 50. It is rate-limited and stores its test ledger ephemerally, so balances may reset when the service restarts. Do not enter real credentials or expect real payments.
+
+## Build an APK
 
 ```bash
 npm install
@@ -25,7 +31,7 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The APK is created at `android/app/build/outputs/apk/debug/app-debug.apk`. The generated `android/` project is intentionally ignored by Git; Expo config and the network security plugin generate it reproducibly.
+The debug APK is created at `android/app/build/outputs/apk/debug/app-debug.apk`. To build a release-variant test APK for the hosted demo, set `EXPO_PUBLIC_API_URL=https://fastpay-demo-api-production.up.railway.app` before running `./gradlew assembleRelease`. The generated `android/` project is intentionally ignored by Git; Expo config and the network security plugin generate it reproducibly. The shared phone-test APK is signed with a development key and is for testing only.
 
 ## Project layout
 
@@ -36,4 +42,4 @@ The APK is created at `android/app/build/outputs/apk/debug/app-debug.apk`. The g
 
 ## Server URL
 
-Set `EXPO_PUBLIC_API_URL` at bundle time to choose a default HTTPS server URL. For the local Android Emulator, leave it unset to use `http://10.0.2.2:8000`. The simulator must remain private and must not receive real credentials or funds.
+Hosted test API: `https://fastpay-demo-api-production.up.railway.app`. Set `EXPO_PUBLIC_API_URL` at bundle time to choose another default HTTPS server URL. For the local Android Emulator, leave it unset to use `http://10.0.2.2:8000`.
