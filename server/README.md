@@ -1,17 +1,18 @@
-# FastPay FastAPI Server (skeleton)
+# FastPay FastAPI prototype
+
+This server is an isolated demo backend, not a payment processor. Its sample API does not authenticate users, check balances, or verify offline signatures. It must not receive real customer data, credentials, or funds.
+
+By default, all `/api/v1/` endpoints are disabled and return HTTP 503. The root and health endpoints remain available for deployment checks. To run the unsafe demo API locally, explicitly set `FASTPAY_DEMO_MODE=true`; do not set this on a public or production service.
 
 Run with:
 
 ```bash
 pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main_production:app --reload --host 127.0.0.1 --port 8000
 ```
 
 API docs: http://localhost:8000/docs
 
-**Transaction ID and freezing:**
-- Online transactions get a server-generated UUID `tx_id` (stored and returned).
-- `POST /api/v1/transactions/verify-id` verifies that a client-held transaction ID matches the server record; on mismatch the account is frozen and 403 is returned.
-- `POST /api/v1/users/me/freeze` reports account freeze (e.g. after offline verification failure).
+For an isolated demo only, run with `FASTPAY_DEMO_MODE=true`. Do not expose the demo endpoints to the public internet. `main.py` is an older in-memory prototype and should not be deployed.
 
-See `../EXPLANATION_SERVER_AND_CACHE.txt` for full design (online storage, payment reception prompting, freezing, offline sync, and offline wallet cache + PIN encryption).
+Health check: `GET /api/v1/health`. It checks database connectivity and reports whether demo mode is enabled.

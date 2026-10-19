@@ -1,8 +1,14 @@
-# FastPay - Secure Payment Application
+# FastPay - Payment Flow Prototype
 
-A Qt-based mobile payment application supporting both online and offline transactions with ultrasound-based proximity payments.
+A Qt-based C++ prototype exploring online and offline payment flows with ultrasound-based proximity discovery. It is not a real payment product and must not be used to move money or store production credentials.
 
-## 🚀 Quick Start - Build APK in 3 Steps
+## Production status
+
+**Not production-ready.** The Android app contains demo transaction flows and placeholder cryptography. The server does not authenticate users, enforce balances, or verify offline signatures. The production-named API now disables all `/api/v1/` operations by default; only `/` and `/api/v1/health` remain available. Setting `FASTPAY_DEMO_MODE=true` re-enables the prototype API for isolated demonstrations only. Never set that flag on a public deployment.
+
+The current Android app uses Qt Widgets. It is a C++ app that can be packaged for Android, but it does not use Android's native UI toolkit. A native Android UI would require a Kotlin/Java layer and a deliberate JNI boundary to the C++ logic.
+
+## Build the Android APK
 
 ### Step 1: Configure Server URL
 
@@ -106,4 +112,4 @@ App requests RECORD_AUDIO at runtime automatically
 
 ---
 
-Built with Qt 6 • Secure by design 
+Built with Qt 6 for demonstration and development.

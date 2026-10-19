@@ -5,12 +5,13 @@ Supports multiple Android devices connecting simultaneously
 
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, DateTime, Boolean
+from sqlalchemy import create_engine, Column, String, DateTime, Boolean, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -58,7 +59,27 @@ class DeviceToken(Base):
 Base.metadata.create_all(bind=engine)
 
 # FastAPI app
-app = FastAPI(title="FastPay Production API", version="2.0.0")
+app = FastAPI(title="FastPay API (demo only)", version="2.1.0")
+
+# This API is a prototype, not a payment processor. Its current transaction
+# endpoints do not authenticate users, check balances, or verify offline
+# signatures. Refuse all API traffic except health checks unless the operator
+# explicitly enables demo mode. Never enable this flag on a public deployment.
+@app.middleware("http")
+async def require_explicit_demo_mode(request, call_next):
+    if (
+        request.url.path.startswith("/api/v1/")
+        and request.url.path != "/api/v1/health"
+        and os.getenv("FASTPAY_DEMO_MODE", "").lower() != "true"
+    ):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Payment API is disabled: this prototype is not production-ready.",
+                "code": "payment_api_disabled",
+            },
+        )
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -137,7 +158,10 @@ def notify_receiver(receiver_id: str, amount: str, sender_id: str, db: Session):
 # Routes
 @app.get("/")
 def root():
-    return {"status": "FastPay API v2.0", "database": "connected"}
+    return {
+        "status": "FastPay API demo prototype",
+        "payment_api_enabled": os.getenv("FASTPAY_DEMO_MODE", "").lower() == "true",
+    }
 
 @app.post("/api/v1/users/register")
 def register_user(user: UserRegistration, db: Session = Depends(get_db)):
@@ -305,8 +329,16 @@ def register_device_token(body: DeviceTokenPayload, user_id: str, db: Session = 
     return {"registered": True}
 
 @app.get("/api/v1/health")
-def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+def health_check(db: Session = Depends(get_db)):
+    """Check API and database availability without exposing payment operations."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="database_unavailable") from exc
+    return {
+        "status": "healthy",
+        "mode": "demo" if os.getenv("FASTPAY_DEMO_MODE", "").lower() == "true" else "disabled",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 # Run: uvicorn server_production:app --host 0.0.0.0 --port $PORT
